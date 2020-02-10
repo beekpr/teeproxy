@@ -1,7 +1,12 @@
-teeproxy:
-  image: ankitguptag18/teeproxy:distroless-static
-  ports:
-    - "8000:8000"
-  command: /teeproxy -l=:8000 -a="hostname1:8888" -b="hostname2:9908" -debug=false
- 
+services:
+  teeproxy:
+    build:
+      context: .
+    ports:
+      - "8000:8000"
+    command: /teeproxy -l=:8000 -a="null-server-1:5000" -b="null-server-2:5000" -debug=false
 
+networks:
+  default:
+    external:
+      name: experiment

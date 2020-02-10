@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"regexp"
 	"runtime"
 	"strings"
@@ -22,8 +23,8 @@ var (
 	listen                = flag.String("l", ":8888", "port to accept requests")
 	targetProduction      = flag.String("a", "localhost:8080", "where production traffic goes. http://localhost:8080/production")
 	debug                 = flag.Bool("debug", false, "more logging, showing ignored output")
-	productionTimeout     = flag.Int("a.timeout", 2500, "timeout in milliseconds for production traffic")
-	alternateTimeout      = flag.Int("b.timeout", 1000, "timeout in milliseconds for alternate site traffic")
+	productionTimeout     = flag.Int("a.timeout", 3600000, "timeout in milliseconds for production traffic")
+	alternateTimeout      = flag.Int("b.timeout", 3600000, "timeout in milliseconds for alternate site traffic")
 	productionHostRewrite = flag.Bool("a.rewrite", false, "rewrite the host header when proxying production traffic")
 	alternateHostRewrite  = flag.Bool("b.rewrite", false, "rewrite the host header when proxying alternate site traffic")
 	alternateMethods      = flag.String("b.methods", "", "forward only the given HTTP methods matched by regex")
@@ -32,8 +33,12 @@ var (
 	tlsCertificate        = flag.String("cert.file", "", "path to the TLS certificate file")
 	forwardClientIP       = flag.Bool("forward-client-ip", false, "enable forwarding of the client IP to the backend using the 'X-Forwarded-For' and 'Forwarded' headers")
 	closeConnections      = flag.Bool("close-connections", false, "close connections to the clients and backends")
+	logging               = flag.Bool("logging", false, "enable profiling logging")
 
 	alternateMethodsRegex *regexp.Regexp
+
+	logger       = log.New(os.Stdout, "Profile: ", log.Lmicroseconds|log.Ldate)
+	simpleLogger = log.New(os.Stdout, "rt: ", 0)
 )
 
 // Sets the request URL.
@@ -80,10 +85,24 @@ func handleAlternativeRequest(request *http.Request, timeout time.Duration, sche
 			log.Println("Recovered in ServeHTTP(alternate request) from:", r)
 		}
 	}()
+	if *logging {
+		logger.Printf("| Send Request | B | \"%s %s %v\"", request.Method, request.URL.RequestURI(), request.Proto)
+	}
+	startTime := time.Now().UnixNano()
 	response := handleRequest(request, timeout, scheme)
 	if response != nil {
-		log.Printf("| B | \"%s %s %v\" %s", request.Method, request.URL.RequestURI(), request.Proto, response.Status)
+		if *logging {
+			logger.Printf("| Received Response | B | \"%s %s %v\" %s", request.Method, request.URL.RequestURI(), request.Proto, response.Status)
+		}
+
+		endTime := time.Now().UnixNano()
+		simpleLogger.Printf("| B | %s | %s | %s | %d | %d", request.Method, request.URL.RequestURI(), response.Status, startTime, endTime)
+
 		response.Body.Close()
+	} else {
+		if *logging {
+			logger.Printf("| Failed Response | B | \"%s %s %v\" %s", request.Method, request.URL.RequestURI(), request.Proto, "-1")
+		}
 	}
 }
 
@@ -142,6 +161,10 @@ func (h *handler) SetSchemes() {
 // ServeHTTP duplicates the incoming request (req) and does the request to the
 // Target and the Alternate target discading the Alternate response
 func (h handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	if *logging {
+		logger.Printf("| Got Request | A ")
+	}
+
 	var alternativeRequest *http.Request
 	var productionRequest *http.Request
 
@@ -180,13 +203,22 @@ func (h handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 
 	timeout := time.Duration(*productionTimeout) * time.Millisecond
+
+	if *logging {
+		logger.Printf("| Send Request | A | \"%s %s %v\"", productionRequest.Method, productionRequest.URL.RequestURI(), productionRequest.Proto)
+	}
+
+	startTime := time.Now().UnixNano()
 	resp := handleRequest(productionRequest, timeout, h.TargetScheme)
 
 	if resp != nil {
 		defer resp.Body.Close()
+		endTime := time.Now().UnixNano()
+		simpleLogger.Printf("| A | %s | %s | %s | %d | %d", productionRequest.Method, productionRequest.URL.RequestURI(), resp.Status, startTime, endTime)
 
-		log.Printf("| A | \"%s %s %v\" %s", productionRequest.Method, productionRequest.URL.RequestURI(), productionRequest.Proto, resp.Status)
-
+		if *logging {
+			logger.Printf("| Received Response | A | \"%s %s %v\" %s", productionRequest.Method, productionRequest.URL.RequestURI(), productionRequest.Proto, resp.Status)
+		}
 		// Forward response headers.
 		for k, v := range resp.Header {
 			w.Header()[k] = v
@@ -195,6 +227,14 @@ func (h handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 		// Forward response body.
 		io.Copy(w, resp.Body)
+	} else {
+		if *logging {
+			log.Printf("| Failed Response | A | \"%s %s %v\" %s", productionRequest.Method, productionRequest.URL.RequestURI(), productionRequest.Proto, "-1")
+		}
+	}
+
+	if *logging {
+		logger.Printf("| Sent Response | ALL ")
 	}
 }
 
