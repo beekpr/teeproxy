@@ -34,6 +34,8 @@ var (
 	forwardClientIP       = flag.Bool("forward-client-ip", false, "enable forwarding of the client IP to the backend using the 'X-Forwarded-For' and 'Forwarded' headers")
 	closeConnections      = flag.Bool("close-connections", false, "close connections to the clients and backends")
 	logging               = flag.Bool("logging", false, "enable profiling logging")
+	maxIdleConns          = flag.Int("maxIdleConns", 5000, "maximum idle connections")
+	maxIdleConnsPerHost   = flag.Int("maxIdleConnsPerHost", 5000, "maximum idle connections per host")
 
 	alternateMethodsRegex *regexp.Regexp
 
@@ -63,6 +65,8 @@ func getTransport(scheme string, timeout time.Duration) (transport *http.Transpo
 			TLSHandshakeTimeout:   timeout,
 			ResponseHeaderTimeout: timeout,
 			TLSClientConfig:       &tls.Config{InsecureSkipVerify: true},
+			MaxIdleConns: *maxIdleConns,
+			MaxIdleConnsPerHost: *maxIdleConnsPerHost,
 		}
 	} else {
 		transport = &http.Transport{
@@ -73,6 +77,8 @@ func getTransport(scheme string, timeout time.Duration) (transport *http.Transpo
 			DisableKeepAlives:     *closeConnections,
 			TLSHandshakeTimeout:   timeout,
 			ResponseHeaderTimeout: timeout,
+			MaxIdleConns: *maxIdleConns,
+			MaxIdleConnsPerHost: *maxIdleConnsPerHost,
 		}
 	}
 	return
