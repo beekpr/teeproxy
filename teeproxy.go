@@ -35,7 +35,7 @@ var (
 	closeConnections      = flag.Bool("close-connections", false, "close connections to the clients and backends")
 	logging               = flag.Bool("logging", false, "enable profiling logging")
 	maxIdleConns          = flag.Int("maxIdleConns", 5000, "maximum idle connections")
-	maxIdleConnsPerHost   = flag.Int("maxIdleConnsPerHost", 5000, "maximum idle connections per host")
+	maxIdleConnsPerHost   = flag.Int("maxIdleConnsPerHost", 2500, "maximum idle connections per host")
 
 	alternateMethodsRegex *regexp.Regexp
 
